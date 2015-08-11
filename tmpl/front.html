@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>Le GoWiki</title>
+</head>
+<body>
+<h1>Front page</h1>
+<ul>
+    {{.ListItems}}
+</ul>
+<br/>
+<hr/>
+<br>
+<p>Create a new page</p>
+
+<form action="/new" method="POST">
+    <input type="text" name="title" rows="1" cols="10">
+    <input type="submit" value="Create">
+</form>
+<br/>
+</body>
+</html>
