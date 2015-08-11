@@ -308,4 +308,3 @@ func main() {
 }
 
 //todo when go 1.5 release, http2, take off maxversion in tlsconfig, and add session ticket rotation
-//todo title problem and redirection split
