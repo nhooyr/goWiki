@@ -9,7 +9,7 @@
 
 <form action="/save/{{.Title}}" method="POST">
     <h2>Title:</h2>
-    <input type="text" name="title" cols="80" value="{{.Title}}">
+    <input type="text" name="title" size="20" value="{{.Title}}">
     <br>
     <h2>Body:</h2>
     <textarea name="body" rows="20" cols="80">{{.Body}}</textarea>
@@ -22,7 +22,7 @@
 <p>Create a new page</p>
 
 <form action="/new" method="POST">
-    <input type="text" name="title" rows="1" cols="10">
+    <input type="text" name="title" size="20">
     <input type="submit" value="Create">
 </form>
 <br/>

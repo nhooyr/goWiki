@@ -29,8 +29,7 @@ func (p *Page) save() error {
 }
 
 func loadPage(title string) (*Page, error) {
-	filename := "data/" + title
-	body, err := ioutil.ReadFile(filename)
+	body, err := ioutil.ReadFile("data/" + title)
 	if err != nil {
 		return nil, err
 	}
@@ -42,8 +41,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func newHandler(w http.ResponseWriter, r *http.Request) {
-	Title := r.FormValue("title")
-	http.Redirect(w, r, "/edit/"+Title, http.StatusFound)
+	http.Redirect(w, r, "/edit/"+r.FormValue("title"), http.StatusFound)
 }
 
 var linkRegExp = regexp.MustCompile("\\[([a-zA-Z0-9_ ]+)\\]")
@@ -77,7 +75,7 @@ func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p := &Page{Title: r.FormValue("title"), Body: template.HTML(r.FormValue("body"))}
 	err := p.save()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error() + "; likely a invalid name (/ not allowed in names)", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/view/"+p.Title, http.StatusFound)
@@ -97,7 +95,7 @@ func delHandler(w http.ResponseWriter, r *http.Request, title string) {
 	http.Redirect(w, r, "/front", http.StatusSeeOther)
 }
 
-var validPath = regexp.MustCompile("^/(edit|save|view|del)/([a-zA-Z0-9_ ]+)$")
+var validPath = regexp.MustCompile(`^/(edit|save|view|del)/([a-z A-Z 0-9\.-_~!\$&'\(\)\*\+,;=:@ ]+)$`)
 
 func titleHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -134,8 +132,9 @@ func frontHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 const (
-	TLS_PORT = ":4433"
-	REDIRECT_PORT = ":8080"
+	DOMAIN = "localhost"
+	HTTPS_PORT = ":4343"
+	HTTP_PORT = ":8080"
 	KEY = "key.pem"
 	CERT = "cert.pem"
 	ISSUER = "issuer.pem"
@@ -184,15 +183,13 @@ func NewGzipHandleFunc(handler func(http.ResponseWriter, *http.Request)) func(ht
 	}
 }
 
-var domain = "www.aubble.com"
-
 func NewLoggingHandleFunc(handler func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-		if r.Host == domain[4:] {
-			log.Println("redirecting", r.RemoteAddr, "to web domain", domain+TLS_PORT+r.URL.String())
-			http.Redirect(w, r, "https://"+domain+TLS_PORT+r.URL.String(), http.StatusMovedPermanently)
+		if r.Host == DOMAIN[4:] {
+			log.Println("redirecting", r.RemoteAddr, "to web domain", DOMAIN+HTTPS_PORT+r.URL.String())
+			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
 		log.Println(r.URL.String() + " : " + r.RemoteAddr + " : " + r.Host)
@@ -209,7 +206,7 @@ func main() {
 	http.HandleFunc("/del/", NewLoggingHandleFunc(titleHandler(delHandler)))
 	http.HandleFunc("/front", NewLoggingHandleFunc(NewGzipHandleFunc(frontHandler)))
 	log.SetPrefix("goWiki: ")
-	log.Println("listening... on port", TLS_PORT)
+	log.Println("listening... on port", HTTPS_PORT)
 	go func() {
 		for {
 			err := func() error {
@@ -282,7 +279,7 @@ func main() {
 				//MaxVersion needed because of bug with TLS_FALLBACK_SCSV gonna be fixed in go 1.5
 				TLSConfig.MaxVersion = tls.VersionTLS12
 				TLSConfig.NextProtos = []string{"http/1.1"}
-				ln, err := net.Listen("tcp", TLS_PORT)
+				ln, err := net.Listen("tcp", HTTPS_PORT)
 				if err != nil {
 					return err
 				}
@@ -296,17 +293,12 @@ func main() {
 		time.Sleep(time.Second * TIMEOUT)
 	}()
 	for {
-		log.Println("redirecting from port", REDIRECT_PORT)
-		err := http.ListenAndServe(REDIRECT_PORT, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Println("redirecting from port", HTTP_PORT, "to", HTTPS_PORT)
+		err := http.ListenAndServe(HTTP_PORT, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
 			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-			var subd string
-			if r.Host == domain[4:] {
-				subd = "www."
-			}
-			log.Println("host is:", r.Host)
-			log.Println("redirecting http", r.RemoteAddr, "to https", subd+r.Host+TLS_PORT+r.URL.String())
-			http.Redirect(w, r, "https://"+subd+r.Host+TLS_PORT+r.URL.String(), http.StatusMovedPermanently)
+			log.Println("redirecting http", r.RemoteAddr, "to https", DOMAIN+HTTPS_PORT+r.URL.String())
+			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
 		}))
 		if err != nil {
 			log.Println(err)
@@ -316,3 +308,4 @@ func main() {
 }
 
 //todo when go 1.5 release, http2, take off maxversion in tlsconfig, and add session ticket rotation
+//todo title problem and redirection split
