@@ -317,5 +317,4 @@ func main() {
 	}
 }
 
-//todo server redirect to www.aubble.com, check different protocol versions support for PCI and check new scan options
 //todo when go 1.5 release, http2, take off maxversion in tlsconfig, and add session ticket rotation
