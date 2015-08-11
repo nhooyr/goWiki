@@ -44,7 +44,7 @@ func newHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/edit/"+r.FormValue("title"), http.StatusFound)
 }
 
-var linkRegExp = regexp.MustCompile("\\[([a-zA-Z0-9_ ]+)\\]")
+var linkRegExp = regexp.MustCompile(`\[([a-z A-Z 0-9\.-_~!\$&'\(\)\*\+,;=:@ ]+)\]`)
 
 func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p, err := loadPage(title)
