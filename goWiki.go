@@ -25,8 +25,7 @@ type Page struct {
 }
 
 func (p *Page) save() error {
-	filename := "data/" + p.Title
-	return ioutil.WriteFile(filename, []byte(p.Body), 0644)
+	return ioutil.WriteFile("data/" + p.Title, []byte(p.Body), 0644)
 }
 
 func loadPage(title string) (*Page, error) {
@@ -74,14 +73,14 @@ func editHandler(w http.ResponseWriter, r *http.Request, title string) {
 }
 
 func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
-	body := template.HTML(r.FormValue("body"))
-	p := &Page{Title: title, Body: body}
+	os.Remove("data/" + title)
+	p := &Page{Title: r.FormValue("title"), Body: template.HTML(r.FormValue("body"))}
 	err := p.save()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/view/"+title, http.StatusFound)
+	http.Redirect(w, r, "/view/"+p.Title, http.StatusFound)
 }
 
 var templates = template.Must(template.ParseFiles("tmpl/front.html", "tmpl/edit.html", "tmpl/view.html"))
@@ -135,8 +134,8 @@ func frontHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 const (
-	TLS_PORT = ":443"
-	REDIRECT_PORT = ":80"
+	TLS_PORT = ":4433"
+	REDIRECT_PORT = ":8080"
 	KEY = "key.pem"
 	CERT = "cert.pem"
 	ISSUER = "issuer.pem"
@@ -264,7 +263,6 @@ func main() {
 					}
 					resp.Body.Close()
 				}
-				srv := new(http.Server)
 				TLSConfig := new(tls.Config)
 				TLSConfig.Certificates = []tls.Certificate{cert}
 				TLSConfig.BuildNameToCertificate()
@@ -289,7 +287,7 @@ func main() {
 					return err
 				}
 				tlsListener := tls.NewListener(tcpKeepAliveListener{ln.(*net.TCPListener)}, TLSConfig)
-				return srv.Serve(tlsListener)
+				return new(http.Server).Serve(tlsListener)
 			}()
 			if err != nil {
 				log.Println(err)
