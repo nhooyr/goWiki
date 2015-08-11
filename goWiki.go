@@ -44,7 +44,7 @@ func newHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/edit/"+r.FormValue("title"), http.StatusFound)
 }
 
-var linkRegExp = regexp.MustCompile(`\[([a-z A-Z 0-9\.-_~!\$&'\(\)\*\+,;=:@ ]+)\]`)
+var linkRegExp = regexp.MustCompile(`\[[a-zA-Z0-9.\-_~!$&'()*+,;=:@ ]+\]`)
 
 func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p, err := loadPage(title)
@@ -55,8 +55,8 @@ func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 	if p.Body == "" {
 		p.Body = "Empty"
 	}
-	p.Body = template.HTML(linkRegExp.ReplaceAllFunc([]byte(template.HTMLEscaper(p.Body)), func(bLink []byte) []byte {
-		sLink := string(bLink)
+	p.Body = template.HTML(linkRegExp.ReplaceAllFunc([]byte(template.HTMLEscaper(p.Body)), func(link []byte) []byte {
+		sLink := string(link)
 		return []byte("<a href=\"/view/" + sLink[1:len(sLink)-1] + "\">" + sLink[1:len(sLink)-1] + "</a>")
 	}))
 	renderTemplate(w, "view", p)
@@ -95,7 +95,7 @@ func delHandler(w http.ResponseWriter, r *http.Request, title string) {
 	http.Redirect(w, r, "/front", http.StatusSeeOther)
 }
 
-var validPath = regexp.MustCompile(`^/(edit|save|view|del)/([a-z A-Z 0-9\.-_~!\$&'\(\)\*\+,;=:@ ]+)$`)
+var validPath = regexp.MustCompile(`^\/(edit|save|view|del)\/([a-zA-Z0-9.\-_~!$&'()*+,;=:@ ]+)$`)
 
 func titleHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -132,8 +132,9 @@ func frontHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 const (
-	DOMAIN = "localhost"
+	DOMAIN = "www.aubble.com"
 	HTTPS_PORT = ":4343"
+	PUBLIC_HTTPS_PORT = ":443"
 	HTTP_PORT = ":8080"
 	KEY = "key.pem"
 	CERT = "cert.pem"
@@ -243,23 +244,26 @@ func main() {
 					if err != nil {
 						return err
 					}
-					b64req := base64.StdEncoding.EncodeToString(req)
 					var resp *http.Response
 					for i := 0; i < len(cert.Leaf.OCSPServer); i++ {
-						httpReq, err := http.NewRequest("GET", cert.Leaf.OCSPServer[i]+"/"+b64req, nil)
+						httpReq, err := http.NewRequest("GET", cert.Leaf.OCSPServer[i]+"/"+base64.StdEncoding.EncodeToString(req), nil)
 						httpReq.Header.Add("Content-Language", "application/ocsp-request")
 						httpReq.Header.Add("Accept", "application/ocsp-response")
 						resp, err = http.DefaultClient.Do(httpReq)
 						if err == nil {
 							break
 						}
-						return err
+						if i == len(cert.Leaf.OCSPServer){
+							break
+						}
+						continue
 					}
 					if cert.OCSPStaple, err = ioutil.ReadAll(resp.Body); err != nil {
 						return err
 					}
 					resp.Body.Close()
 				}
+				//TODO this ocsp in a goroutine and TLSConfig.GetCertificate
 				TLSConfig := new(tls.Config)
 				TLSConfig.Certificates = []tls.Certificate{cert}
 				TLSConfig.BuildNameToCertificate()
@@ -293,12 +297,12 @@ func main() {
 		time.Sleep(time.Second * TIMEOUT)
 	}()
 	for {
-		log.Println("redirecting from port", HTTP_PORT, "to", HTTPS_PORT)
+		log.Println("redirecting from port", HTTP_PORT, "to", PUBLIC_HTTPS_PORT)
 		err := http.ListenAndServe(HTTP_PORT, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
 			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-			log.Println("redirecting http", r.RemoteAddr, "to https", DOMAIN+HTTPS_PORT+r.URL.String())
-			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
+			log.Println("redirecting http", r.RemoteAddr, "to https", DOMAIN+PUBLIC_HTTPS_PORT+r.URL.String())
+			http.Redirect(w, r, "https://"+DOMAIN+PUBLIC_HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
 		}))
 		if err != nil {
 			log.Println(err)
