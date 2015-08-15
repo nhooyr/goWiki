@@ -189,7 +189,7 @@ func newLoggingHandleFunc(handler func(http.ResponseWriter, *http.Request)) http
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-		w.Header().Set("Public-Key-Pins", "pin-sha256=\"8VPt/NxhfOD1hzRXs6AGGsrSq6TWcGUxS1w/WkgIOSw=\"; pin-sha256=\"S57MP6SO4zTatVSMOpJlIyNTTTsD+wqRbg5unm/koNA=\"; max-age=15552000; includeSubDomains")
+		w.Header().Set("Public-Key-Pins", "pin-sha256=\"8VPt/NxhfOD1hzRXs6AGGsrSq6TWcGUxS1w/WkgIOSw=\"; pin-sha256=\"S57MP6SO4zTatVSMOpJlIyNTTTsD+wqRbg5unm/koNA=\"; pin-256=\"mWY+rVWtg92k8ChASLl8pcLxN9UOBde5emaUWyZ1emk=\";max-age=15552000; includeSubDomains")
 		w.Header().Set("Server", "Jesus")
 		if r.Host == DOMAIN[4:] {
 			log.Println("redirecting", r.RemoteAddr, "to web domain", DOMAIN+HTTPS_PORT+r.URL.String())
@@ -201,6 +201,15 @@ func newLoggingHandleFunc(handler func(http.ResponseWriter, *http.Request)) http
 	})
 }
 
+func hsts_hpkp(w http.ResponseWriter, r *http.Request){
+	w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
+	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+	w.Header().Set("Public-Key-Pins", "pin-sha256=\"8VPt/NxhfOD1hzRXs6AGGsrSq6TWcGUxS1w/WkgIOSw=\"; pin-sha256=\"S57MP6SO4zTatVSMOpJlIyNTTTsD+wqRbg5unm/koNA=\"; pin-256=\"mWY+rVWtg92k8ChASLl8pcLxN9UOBde5emaUWyZ1emk=\";max-age=15552000; includeSubDomains")
+	w.Header().Set("Server", "Jesus")
+	w.WriteHeader(http.StatusOK)
+	log.Println(r.URL.String() + " : " + r.RemoteAddr + " : " + r.Host)
+}
+
 func main() {
 	http.HandleFunc("/", newLoggingHandleFunc(rootHandler))
 	http.HandleFunc("/new", newLoggingHandleFunc(newHandler))
@@ -209,6 +218,7 @@ func main() {
 	http.HandleFunc("/save/", newLoggingHandleFunc(titleHandler(saveHandler)))
 	http.HandleFunc("/del/", newLoggingHandleFunc(titleHandler(delHandler)))
 	http.HandleFunc("/front", newLoggingHandleFunc(newGzipHandleFunc(frontHandler)))
+	http.HandleFunc("/hsts_hpkp", hsts_hpkp)
 	log.SetPrefix("goWiki: ")
 	log.Println("listening... on port", HTTPS_PORT)
 	go func() {
@@ -302,9 +312,7 @@ func main() {
 	for {
 		log.Println("redirecting from port", HTTP_PORT, "to", HTTPS_PORT)
 		err := http.ListenAndServe(HTTP_PORT, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
 			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-			w.Header().Set("Public-Key-Pins", "pin-sha256=\"8VPt/NxhfOD1hzRXs6AGGsrSq6TWcGUxS1w/WkgIOSw=\"; pin-sha256=\"S57MP6SO4zTatVSMOpJlIyNTTTsD+wqRbg5unm/koNA=\"; max-age=15552000; includeSubDomains")
 			w.Header().Set("Server", "Jesus")
 			log.Println("redirecting http", r.RemoteAddr, "to https", DOMAIN+HTTPS_PORT+r.URL.String())
 			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
