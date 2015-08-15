@@ -135,9 +135,8 @@ func frontHandler(w http.ResponseWriter, r *http.Request) {
 
 const (
 	DOMAIN = "www.aubble.com"
-	HTTPS_PORT = ":4343"
-	PUBLIC_HTTPS_PORT = ":443"
-	HTTP_PORT = ":8080"
+	HTTPS_PORT = ":443"
+	HTTP_PORT = ":80"
 	KEY = "key.pem"
 	CERT = "cert.pem"
 	ISSUER = "issuer.pem"
@@ -192,8 +191,8 @@ func newLoggingHandleFunc(handler func(http.ResponseWriter, *http.Request)) http
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Server", "Jesus")
 		if r.Host == DOMAIN[4:] {
-			log.Println("redirecting", r.RemoteAddr, "to web domain", DOMAIN+PUBLIC_HTTPS_PORT+r.URL.String())
-			http.Redirect(w, r, "https://"+DOMAIN+PUBLIC_HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
+			log.Println("redirecting", r.RemoteAddr, "to web domain", DOMAIN+HTTPS_PORT+r.URL.String())
+			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
 		log.Println(r.URL.String() + " : " + r.RemoteAddr + " : " + r.Host)
@@ -300,12 +299,12 @@ func main() {
 		time.Sleep(time.Second * TIMEOUT)
 	}()
 	for {
-		log.Println("redirecting from port", HTTP_PORT, "to", PUBLIC_HTTPS_PORT)
+		log.Println("redirecting from port", HTTP_PORT, "to", HTTPS_PORT)
 		err := http.ListenAndServe(HTTP_PORT, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
 			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-			log.Println("redirecting http", r.RemoteAddr, "to https", DOMAIN+PUBLIC_HTTPS_PORT+r.URL.String())
-			http.Redirect(w, r, "https://"+DOMAIN+PUBLIC_HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
+			log.Println("redirecting http", r.RemoteAddr, "to https", DOMAIN+HTTPS_PORT+r.URL.String())
+			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
 		}))
 		if err != nil {
 			log.Println(err)
