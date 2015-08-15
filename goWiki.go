@@ -71,7 +71,9 @@ func editHandler(w http.ResponseWriter, r *http.Request, title string) {
 }
 
 func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
-	os.Remove("data/" + title)
+	if title != r.FormValue("title") {
+		os.Rename("data/"+title, "data/"+r.FormValue("title"))
+	}
 	p := &Page{Title: r.FormValue("title"), Body: template.HTML(r.FormValue("body"))}
 	err := p.save()
 	if err != nil {
@@ -170,7 +172,7 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	return w.gzipWriter.Write(b)
 }
 
-func NewGzipHandleFunc(handler func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+func newGzipHandleFunc(handler func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", "Accept-Encoding")
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
@@ -184,13 +186,14 @@ func NewGzipHandleFunc(handler func(http.ResponseWriter, *http.Request)) func(ht
 	}
 }
 
-func NewLoggingHandleFunc(handler func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
+func newLoggingHandleFunc(handler func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("Server", "Jesus")
 		if r.Host == DOMAIN[4:] {
-			log.Println("redirecting", r.RemoteAddr, "to web domain", DOMAIN+HTTPS_PORT+r.URL.String())
-			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
+			log.Println("redirecting", r.RemoteAddr, "to web domain", DOMAIN+PUBLIC_HTTPS_PORT+r.URL.String())
+			http.Redirect(w, r, "https://"+DOMAIN+PUBLIC_HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
 		log.Println(r.URL.String() + " : " + r.RemoteAddr + " : " + r.Host)
@@ -199,13 +202,13 @@ func NewLoggingHandleFunc(handler func(http.ResponseWriter, *http.Request)) http
 }
 
 func main() {
-	http.HandleFunc("/", NewLoggingHandleFunc(rootHandler))
-	http.HandleFunc("/new", NewLoggingHandleFunc(newHandler))
-	http.HandleFunc("/view/", NewLoggingHandleFunc(NewGzipHandleFunc(titleHandler(viewHandler))))
-	http.HandleFunc("/edit/", NewLoggingHandleFunc(NewGzipHandleFunc(titleHandler(editHandler))))
-	http.HandleFunc("/save/", NewLoggingHandleFunc(titleHandler(saveHandler)))
-	http.HandleFunc("/del/", NewLoggingHandleFunc(titleHandler(delHandler)))
-	http.HandleFunc("/front", NewLoggingHandleFunc(NewGzipHandleFunc(frontHandler)))
+	http.HandleFunc("/", newLoggingHandleFunc(rootHandler))
+	http.HandleFunc("/new", newLoggingHandleFunc(newHandler))
+	http.HandleFunc("/view/", newLoggingHandleFunc(newGzipHandleFunc(titleHandler(viewHandler))))
+	http.HandleFunc("/edit/", newLoggingHandleFunc(newGzipHandleFunc(titleHandler(editHandler))))
+	http.HandleFunc("/save/", newLoggingHandleFunc(titleHandler(saveHandler)))
+	http.HandleFunc("/del/", newLoggingHandleFunc(titleHandler(delHandler)))
+	http.HandleFunc("/front", newLoggingHandleFunc(newGzipHandleFunc(frontHandler)))
 	log.SetPrefix("goWiki: ")
 	log.Println("listening... on port", HTTPS_PORT)
 	go func() {
@@ -311,4 +314,4 @@ func main() {
 	}
 }
 
-//todo when go 1.5 release, http2, take off maxversion in tlsconfig, and add session ticket rotation
+//todo when go 1.5 release, http2, take off maxversion in tlsconfig, and add session ticket rotation, and update OCSP response
