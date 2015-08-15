@@ -25,7 +25,7 @@ type Page struct {
 }
 
 func (p *Page) save() error {
-	return ioutil.WriteFile("data/" + p.Title, []byte(p.Body), 0644)
+	return ioutil.WriteFile("data/"+p.Title, []byte(p.Body), 0644)
 }
 
 func loadPage(title string) (*Page, error) {
@@ -77,7 +77,7 @@ func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p := &Page{Title: r.FormValue("title"), Body: template.HTML(r.FormValue("body"))}
 	err := p.save()
 	if err != nil {
-		http.Error(w, err.Error() + "; likely a invalid name (/ not allowed in names)", http.StatusInternalServerError)
+		http.Error(w, err.Error()+"; likely a invalid name (/ not allowed in names)", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/view/"+p.Title, http.StatusFound)
@@ -134,13 +134,13 @@ func frontHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 const (
-	DOMAIN = "www.aubble.com"
+	DOMAIN     = "www.aubble.com"
 	HTTPS_PORT = ":443"
-	HTTP_PORT = ":80"
-	KEY = "key.pem"
-	CERT = "cert.pem"
-	ISSUER = "issuer.pem"
-	TIMEOUT = 30
+	HTTP_PORT  = ":80"
+	KEY        = "key.pem"
+	CERT       = "cert.pem"
+	ISSUER     = "issuer.pem"
+	TIMEOUT    = 30
 )
 
 type tcpKeepAliveListener struct {
@@ -153,14 +153,14 @@ func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
 		return
 	}
 	tc.SetKeepAlive(true)
-	tc.SetKeepAlivePeriod(3 * time.Minute)
+	tc.SetKeepAlivePeriod(1 * time.Minute)
 	return tc, nil
 }
 
 type gzipResponseWriter struct {
 	gzipWriter io.Writer
 	http.ResponseWriter
-	sniffDone  bool
+	sniffDone bool
 }
 
 func (w *gzipResponseWriter) Write(b []byte) (int, error) {
@@ -189,6 +189,7 @@ func newLoggingHandleFunc(handler func(http.ResponseWriter, *http.Request)) http
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("Public-Key-Pins", "pin-sha256=\"8VPt/NxhfOD1hzRXs6AGGsrSq6TWcGUxS1w/WkgIOSw=\"; pin-sha256=\"S57MP6SO4zTatVSMOpJlIyNTTTsD+wqRbg5unm/koNA=\"; max-age=15552000; includeSubDomains")
 		w.Header().Set("Server", "Jesus")
 		if r.Host == DOMAIN[4:] {
 			log.Println("redirecting", r.RemoteAddr, "to web domain", DOMAIN+HTTPS_PORT+r.URL.String())
@@ -255,7 +256,7 @@ func main() {
 						if err == nil {
 							break
 						}
-						if i == len(cert.Leaf.OCSPServer){
+						if i == len(cert.Leaf.OCSPServer) {
 							break
 						}
 						continue
@@ -303,6 +304,8 @@ func main() {
 		err := http.ListenAndServe(HTTP_PORT, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
 			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+			w.Header().Set("Public-Key-Pins", "pin-sha256=\"8VPt/NxhfOD1hzRXs6AGGsrSq6TWcGUxS1w/WkgIOSw=\"; pin-sha256=\"S57MP6SO4zTatVSMOpJlIyNTTTsD+wqRbg5unm/koNA=\"; max-age=15552000; includeSubDomains")
+			w.Header().Set("Server", "Jesus")
 			log.Println("redirecting http", r.RemoteAddr, "to https", DOMAIN+HTTPS_PORT+r.URL.String())
 			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
 		}))
