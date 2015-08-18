@@ -246,7 +246,7 @@ func (OCSPC *OCSPCert) updateStaple() (err error) {
 		OCSPC.nextUpdate = time.Now().Add(time.Second*OCSP_INTERVAL)
 	}
 	cert := *OCSPC.cert
-	cert.OCSPStaple = OCSPStaple
+		cert.OCSPStaple = OCSPStaple
 	OCSPC.Lock()
 	OCSPC.cert = &cert
 	OCSPC.Unlock()
