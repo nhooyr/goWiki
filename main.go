@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"golang.org/x/crypto/ocsp"
 	"html/template"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -134,13 +136,14 @@ func frontHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 const (
-	DOMAIN     = "www.aubble.com"
-	HTTPS_PORT = ":443"
-	HTTP_PORT  = ":80"
-	KEY        = "key.pem"
-	CERT       = "cert.pem"
-	ISSUER     = "issuer.pem"
-	TIMEOUT    = 30
+	DOMAIN        = "www.aubble.com"
+	HTTPS_PORT    = ":443"
+	HTTP_PORT     = ":80"
+	KEY           = "key.pem"
+	CERT          = "cert.pem"
+	ISSUER        = "issuer.pem"
+	TIMEOUT       = 10
+	OCSP_INTERVAL = 300 // only used when nextUpdate is empty
 )
 
 type tcpKeepAliveListener struct {
@@ -192,22 +195,80 @@ func newLoggingHandleFunc(handler func(http.ResponseWriter, *http.Request)) http
 		w.Header().Set("Public-Key-Pins", "pin-sha256=\"8VPt/NxhfOD1hzRXs6AGGsrSq6TWcGUxS1w/WkgIOSw=\"; pin-sha256=\"S57MP6SO4zTatVSMOpJlIyNTTTsD+wqRbg5unm/koNA=\"; pin-256=\"mWY+rVWtg92k8ChASLl8pcLxN9UOBde5emaUWyZ1emk=\";max-age=15552000; includeSubDomains")
 		w.Header().Set("Server", "Jesus")
 		if r.Host == DOMAIN[4:] {
-			log.Println("redirecting", r.RemoteAddr, "to web domain", DOMAIN+HTTPS_PORT+r.URL.String())
-			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
+			log.Println("redirecting", r.RemoteAddr, "to web domain", DOMAIN+HTTPS_PORT+r.URL.Path)
+			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.Path, http.StatusMovedPermanently)
 			return
 		}
-		log.Println(r.URL.String() + " : " + r.RemoteAddr + " : " + r.Host)
+		log.Println(r.URL.Path + " : " + r.RemoteAddr)
 		handler(w, r)
 	})
 }
 
-func hsts_hpkp(w http.ResponseWriter, r *http.Request){
+func hsts_hpkp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains; preload")
 	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 	w.Header().Set("Public-Key-Pins", "pin-sha256=\"8VPt/NxhfOD1hzRXs6AGGsrSq6TWcGUxS1w/WkgIOSw=\"; pin-sha256=\"S57MP6SO4zTatVSMOpJlIyNTTTsD+wqRbg5unm/koNA=\"; pin-256=\"mWY+rVWtg92k8ChASLl8pcLxN9UOBde5emaUWyZ1emk=\";max-age=15552000; includeSubDomains")
 	w.Header().Set("Server", "Jesus")
 	w.WriteHeader(http.StatusOK)
-	log.Println(r.URL.String() + " : " + r.RemoteAddr + " : " + r.Host)
+	log.Println(r.URL.Path + " : " + r.RemoteAddr)
+}
+
+type OCSPCert struct {
+	cert       *tls.Certificate
+	req        []byte
+	issuer     *x509.Certificate
+	nextUpdate time.Time
+	sync.RWMutex
+}
+
+func (OCSPC *OCSPCert) updateStaple() (err error) {
+	var resp *http.Response
+	for i := 0; i < len(OCSPC.cert.Leaf.OCSPServer); i++ {
+		req, err := http.NewRequest("GET", OCSPC.cert.Leaf.OCSPServer[i]+"/"+base64.StdEncoding.EncodeToString(OCSPC.req), nil)
+		req.Header.Add("Content-Language", "application/ocsp-request")
+		req.Header.Add("Accept", "application/ocsp-response")
+		resp, err = http.DefaultClient.Do(req)
+		if err == nil {
+			break
+		}
+		if i == len(OCSPC.cert.Leaf.OCSPServer) {
+			break
+		}
+	}
+	var OCSPStaple []byte
+	if OCSPStaple, err = ioutil.ReadAll(resp.Body); err != nil {
+		return err
+	}
+	OCSPResp, _ := ocsp.ParseResponse(OCSPStaple, OCSPC.issuer)
+	if OCSPResp.NextUpdate != (time.Time{}) {
+		OCSPC.nextUpdate = OCSPResp.NextUpdate
+	} else {
+		OCSPC.nextUpdate = time.Now().Add(time.Second*OCSP_INTERVAL)
+	}
+	cert := *OCSPC.cert
+	cert.OCSPStaple = OCSPStaple
+	OCSPC.Lock()
+	OCSPC.cert = &cert
+	OCSPC.Unlock()
+	resp.Body.Close()
+	if err == nil {
+		log.Println("successfully fetched OCSP reponse and stapled")
+		log.Println("next update at", OCSPC.nextUpdate)
+	}
+	return err
+}
+
+func (OCSPC *OCSPCert) stapleLoop() {
+	time.Sleep(OCSPC.nextUpdate.Sub(time.Now()))
+	for {
+		err := OCSPC.updateStaple()
+		if err == nil {
+			time.Sleep(OCSPC.nextUpdate.Sub(time.Now()))
+		} else {
+			log.Println(err)
+			time.Sleep(time.Second * TIMEOUT)
+		}
+	}
 }
 
 func main() {
@@ -224,62 +285,47 @@ func main() {
 	go func() {
 		for {
 			err := func() error {
+				var OCSPC OCSPCert
+				var err error
 				cert, err := tls.LoadX509KeyPair(CERT, KEY)
 				if err != nil {
 					return err
 				}
-				if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
+				OCSPC.cert = &cert
+				if OCSPC.cert.Leaf, err = x509.ParseCertificate(OCSPC.cert.Certificate[0]); err != nil {
 					return err
 				}
-				if cert.Leaf.OCSPServer != nil {
-					issuerRAW, err := ioutil.ReadFile(ISSUER)
-					if err != nil {
-						return err
-					}
-					var issuer *x509.Certificate
-					for {
-						var issuerPEM *pem.Block
-						issuerPEM, issuerRAW = pem.Decode(issuerRAW)
-						if issuerPEM == nil {
-							break
-						}
-						if issuerPEM.Type == "CERTIFICATE" {
-							issuer, err = x509.ParseCertificate(issuerPEM.Bytes)
-							if err != nil {
-								return err
-							}
-						}
-					}
-					if issuer == nil {
-						return err
-					}
-					req, err := ocsp.CreateRequest(cert.Leaf, issuer, nil)
-					if err != nil {
-						return err
-					}
-					var resp *http.Response
-					for i := 0; i < len(cert.Leaf.OCSPServer); i++ {
-						httpReq, err := http.NewRequest("GET", cert.Leaf.OCSPServer[i]+"/"+base64.StdEncoding.EncodeToString(req), nil)
-						httpReq.Header.Add("Content-Language", "application/ocsp-request")
-						httpReq.Header.Add("Accept", "application/ocsp-response")
-						resp, err = http.DefaultClient.Do(httpReq)
-						if err == nil {
-							break
-						}
-						if i == len(cert.Leaf.OCSPServer) {
-							break
-						}
-						continue
-					}
-					if cert.OCSPStaple, err = ioutil.ReadAll(resp.Body); err != nil {
-						return err
-					}
-					resp.Body.Close()
+				issuerRAW, err := ioutil.ReadFile(ISSUER)
+				if err != nil {
+					return err
 				}
-				//TODO this ocsp in a goroutine and TLSConfig.GetCertificate
+				for {
+					var issuerPEM *pem.Block
+					issuerPEM, issuerRAW = pem.Decode(issuerRAW)
+					if issuerPEM == nil {
+						break
+					}
+					if issuerPEM.Type == "CERTIFICATE" {
+						OCSPC.issuer, err = x509.ParseCertificate(issuerPEM.Bytes)
+						if err != nil {
+							return err
+						}
+					}
+				}
+				if OCSPC.issuer == nil {
+					return errors.New("no issuer")
+				}
+				OCSPC.req, err = ocsp.CreateRequest(OCSPC.cert.Leaf, OCSPC.issuer, nil)
+				if err != nil {
+					return err
+				}
+				err = OCSPC.updateStaple()
+				if err != nil {
+					return err
+				}
+				go OCSPC.stapleLoop()
 				TLSConfig := new(tls.Config)
 				TLSConfig.Certificates = []tls.Certificate{cert}
-				TLSConfig.BuildNameToCertificate()
 				TLSConfig.CipherSuites = []uint16{
 					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
@@ -296,6 +342,11 @@ func main() {
 				//MaxVersion needed because of bug with TLS_FALLBACK_SCSV gonna be fixed in go 1.5
 				TLSConfig.MaxVersion = tls.VersionTLS12
 				TLSConfig.NextProtos = []string{"http/1.1"}
+				TLSConfig.GetCertificate = func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+					OCSPC.RLock()
+					defer OCSPC.RUnlock()
+					return OCSPC.cert, nil
+				}
 				ln, err := net.Listen("tcp", HTTPS_PORT)
 				if err != nil {
 					return err
@@ -306,16 +357,16 @@ func main() {
 			if err != nil {
 				log.Println(err)
 			}
+			time.Sleep(time.Second * TIMEOUT)
 		}
-		time.Sleep(time.Second * TIMEOUT)
 	}()
 	for {
 		log.Println("redirecting from port", HTTP_PORT, "to", HTTPS_PORT)
 		err := http.ListenAndServe(HTTP_PORT, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 			w.Header().Set("Server", "Jesus")
-			log.Println("redirecting http", r.RemoteAddr, "to https", DOMAIN+HTTPS_PORT+r.URL.String())
-			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.String(), http.StatusMovedPermanently)
+			log.Println("redirecting http", r.RemoteAddr, "to https", DOMAIN+HTTPS_PORT+r.URL.Path)
+			http.Redirect(w, r, "https://"+DOMAIN+HTTPS_PORT+r.URL.Path, http.StatusMovedPermanently)
 		}))
 		if err != nil {
 			log.Println(err)
@@ -325,3 +376,4 @@ func main() {
 }
 
 //todo when go 1.5 release, http2, take off maxversion in tlsconfig, and add session ticket rotation, and update OCSP response
+//todo think about cow
