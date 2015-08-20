@@ -243,10 +243,10 @@ func (OCSPC *OCSPCert) updateStaple() (err error) {
 	if OCSPResp.NextUpdate != (time.Time{}) {
 		OCSPC.nextUpdate = OCSPResp.NextUpdate
 	} else {
-		OCSPC.nextUpdate = time.Now().Add(time.Second*OCSP_INTERVAL)
+		OCSPC.nextUpdate = time.Now().Add(time.Second * OCSP_INTERVAL)
 	}
 	cert := *OCSPC.cert
-		cert.OCSPStaple = OCSPStaple
+	cert.OCSPStaple = OCSPStaple
 	OCSPC.Lock()
 	OCSPC.cert = &cert
 	OCSPC.Unlock()
@@ -266,7 +266,7 @@ func (OCSPC *OCSPCert) stapleLoop() {
 			time.Sleep(OCSPC.nextUpdate.Sub(time.Now()))
 		} else {
 			log.Println(err)
-			time.Sleep(time.Second * TIMEOUT)
+			time.Sleep(time.Second * OCSP_INTERVAL)
 		}
 	}
 }
