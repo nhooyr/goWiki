@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
-	"golang.org/x/crypto/ocsp"
 	"html/template"
 	"io"
 	"io/ioutil"
@@ -19,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/ocsp"
 )
 
 type Page struct {
@@ -266,7 +267,7 @@ func (OCSPC *OCSPCert) stapleLoop() {
 			time.Sleep(OCSPC.nextUpdate.Sub(time.Now()))
 		} else {
 			log.Println(err)
-			time.Sleep(time.Second * OCSP_INTERVAL)
+			time.Sleep(time.Second * TIMEOUT)
 		}
 	}
 }

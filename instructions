@@ -1,0 +1,7 @@
+Generate cert/key
+sudo openssl ecparam -genkey -name secp384r1 -out key.pem
+sudo openssl req -new --config openssl.cnf key key.pem -sha256 -nodes -out cert.csr
+
+Generate pin
+openssl req -in cert.csr -pubkey -noout | openssl rsa -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64
+openssl x509 -in cert.pem -pubkey -noout | openssl ec -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64

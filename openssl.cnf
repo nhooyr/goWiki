@@ -1,0 +1,23 @@
+[ req ]
+default_bits           = 4096
+default_keyfile        = key.pem
+default_md             = sha256
+distinguished_name     = req_distinguished_name
+prompt                 = no
+x509_extensions        = v3_ca
+encrypt_key            = no
+
+[ req_distinguished_name ]
+C                      = CA
+ST                     = Ontario
+L                      = Mississauga
+O                      = aubble
+CN                     = www.aubble.com
+emailAddress           = info@aubble.com
+
+[ v3_ca]
+subjectAltName 		   = @alt_names
+
+[alt_names]
+DNS.1 				   = www.aubble.com
+DNS.2 				   = aubble.com
